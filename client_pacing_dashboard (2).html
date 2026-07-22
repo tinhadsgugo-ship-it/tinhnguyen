@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Client Pacing Dashboard — Theo Dõi Ngân Sách & Hiệu Suất</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#F3F5F8; --surface:#FFFFFF; --border:#E3E7EE; --border-soft:#EDF0F4;
+    --text-primary:#101828; --text-secondary:#5D6779; --text-tertiary:#98A2B3;
+    --accent:#3538CD; --accent-soft:#ECEDFC;
+    --positive:#0E9F6E; --positive-soft:#E7F9F1;
+    --negative:#E62E2E; --negative-soft:#FDECEC;
+    --warning:#DE8A00; --warning-soft:#FCF1DD;
+    --radius-sm:8px; --radius-md:12px; --radius-lg:18px;
+    --font-sans:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,sans-serif;
+    --font-mono:'IBM Plex Mono',ui-monospace,'SFMono-Regular',monospace;
+    --shadow-card:0 1px 2px rgba(16,24,40,0.04), 0 1px 3px rgba(16,24,40,0.03);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{font-family:var(--font-sans);background:var(--bg);color:var(--text-primary);-webkit-font-smoothing:antialiased;}
+  .dash{max-width:1320px;margin:0 auto;padding:28px 32px 64px;}
+
+  .dash-header{display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:16px;margin-bottom:20px;}
+  .brand-block{display:flex;align-items:center;gap:12px;}
+  .brand-mark{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--accent),#6366F1);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .brand-mark svg{width:19px;height:19px;}
+  .brand-text h1{font-size:19px;font-weight:700;margin:0;letter-spacing:-0.01em;}
+  .brand-text p{font-size:12.5px;color:var(--text-secondary);margin:2px 0 0;}
+  .updated-text{font-size:12px;color:var(--text-tertiary);font-family:var(--font-mono);}
+
+  .control-bar{
+    display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);
+    padding:12px 16px;margin-bottom:18px;box-shadow:var(--shadow-card);
+  }
+  .tabs{display:flex;gap:6px;background:var(--bg);padding:4px;border-radius:10px;}
+  .tab{padding:7px 14px;border-radius:8px;font-size:12.5px;font-weight:600;color:var(--text-secondary);cursor:pointer;user-select:none;display:flex;align-items:center;gap:7px;}
+  .tab .dot{width:8px;height:8px;border-radius:50%;}
+  .tab.active{background:var(--surface);color:var(--text-primary);box-shadow:var(--shadow-card);}
+  .elapsed-group{display:flex;align-items:center;gap:8px;margin-left:auto;}
+  .elapsed-group label{font-size:11.5px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.03em;}
+  .elapsed-group input{width:70px;font-family:var(--font-mono);font-size:12.5px;padding:6px 8px;border-radius:var(--radius-sm);border:1px solid var(--border);text-align:right;}
+  .elapsed-group span.suffix{font-size:12.5px;color:var(--text-secondary);}
+
+  /* data source panel */
+  .source-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:18px;box-shadow:var(--shadow-card);}
+  .source-head{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;}
+  .source-head svg{width:15px;height:15px;color:var(--text-tertiary);transition:transform .2s ease;}
+  .source-head.open svg{transform:rotate(90deg);}
+  .source-title{font-size:12.5px;font-weight:700;color:var(--text-secondary);}
+  .source-status{font-size:11.5px;margin-left:auto;font-family:var(--font-mono);}
+  .source-status.ok{color:var(--positive);}
+  .source-status.err{color:var(--negative);}
+  .source-status.idle{color:var(--text-tertiary);}
+  .source-body{display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border-soft);}
+  .source-body.open{display:block;}
+  .source-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .source-row input[type=text]{flex:1;min-width:260px;font-family:var(--font-mono);font-size:12px;padding:8px 10px;border-radius:var(--radius-sm);border:1px solid var(--border);}
+  .btn{font-family:var(--font-sans);font-size:12.5px;font-weight:600;padding:8px 14px;border-radius:var(--radius-sm);border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;white-space:nowrap;}
+  .btn:hover{opacity:0.92;}
+  .btn.secondary{background:#fff;color:var(--accent);}
+  .source-hint{font-size:11px;color:var(--text-tertiary);margin-top:9px;line-height:1.6;}
+
+  /* pacing banner */
+  .pacing-banner{
+    display:flex;align-items:center;gap:20px;background:var(--surface);border:1px solid var(--border);
+    border-radius:var(--radius-md);padding:18px 22px;margin-bottom:18px;box-shadow:var(--shadow-card);
+  }
+  .pacing-ring{position:relative;width:76px;height:76px;flex-shrink:0;}
+  .pacing-ring svg{transform:rotate(-90deg);}
+  .pacing-ring .ring-label{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .pacing-ring .ring-num{font-family:var(--font-mono);font-size:15px;font-weight:700;}
+  .pacing-ring .ring-sub{font-size:8.5px;color:var(--text-tertiary);}
+  .pacing-text h2{font-size:15px;margin:0 0 4px;font-weight:700;}
+  .pacing-text p{font-size:12.5px;color:var(--text-secondary);margin:0;line-height:1.5;}
+  .pacing-chips{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;max-width:340px;}
+  .pace-chip{font-size:11px;font-weight:600;padding:5px 10px;border-radius:999px;display:flex;align-items:center;gap:5px;white-space:nowrap;}
+  .pace-ahead{background:var(--positive-soft);color:var(--positive);}
+  .pace-ontrack{background:var(--warning-soft);color:var(--warning);}
+  .pace-behind{background:var(--negative-soft);color:var(--negative);}
+
+  /* KPI cards */
+  .kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:18px;}
+  .kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:16px 17px;box-shadow:var(--shadow-card);}
+  .kpi-label{font-size:12px;color:var(--text-secondary);font-weight:600;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;}
+  .kpi-value{font-family:var(--font-mono);font-size:19px;font-weight:700;letter-spacing:-0.01em;line-height:1.1;}
+  .kpi-target{font-size:11px;color:var(--text-tertiary);margin-top:3px;font-family:var(--font-mono);}
+  .bar-outer{position:relative;height:9px;border-radius:5px;background:var(--border-soft);margin-top:12px;}
+  .bar-fill{height:100%;border-radius:5px;transition:width .4s ease;}
+  .bar-marker{position:absolute;top:-3px;width:2px;height:15px;background:var(--text-primary);opacity:0.55;}
+  .kpi-foot{display:flex;align-items:center;justify-content:space-between;margin-top:9px;}
+  .pace-badge{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:6px;font-family:var(--font-mono);}
+  .kpi-extra{font-size:10.5px;color:var(--text-tertiary);}
+
+  /* explorer */
+  .explorer-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:18px 20px;box-shadow:var(--shadow-card);margin-bottom:18px;}
+  .explorer-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;}
+  .card-title{font-size:13.5px;font-weight:700;margin:0;}
+  .card-sub{font-size:11.5px;color:var(--text-tertiary);margin:2px 0 0;}
+  select.control{font-family:var(--font-sans);font-size:12.5px;padding:7px 10px;border-radius:var(--radius-sm);border:1px solid var(--border);background:#fff;color:var(--text-primary);}
+  .chart-wrap{position:relative;height:250px;}
+
+  /* detail tables */
+  .detail-section{display:flex;flex-direction:column;gap:14px;margin-bottom:18px;}
+  .detail-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-card);overflow:hidden;}
+  .detail-head{display:flex;align-items:center;gap:9px;padding:14px 18px 10px;}
+  .detail-head .dot{width:10px;height:10px;border-radius:50%;}
+  .detail-head h3{font-size:13.5px;margin:0;font-weight:700;}
+  table.detail{width:100%;border-collapse:collapse;}
+  table.detail thead th{
+    font-size:10.5px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.03em;
+    text-align:right;padding:8px 16px;border-top:1px solid var(--border-soft);border-bottom:1px solid var(--border);background:#FAFBFC;white-space:nowrap;
+  }
+  table.detail thead th:first-child{text-align:left;}
+  table.detail tbody td{padding:10px 16px;font-size:12.5px;text-align:right;border-bottom:1px solid var(--border-soft);white-space:nowrap;}
+  table.detail tbody td:first-child{text-align:left;font-weight:600;}
+  table.detail tbody tr:last-child td{border-bottom:none;}
+  .mono{font-family:var(--font-mono);}
+
+  footer.note{margin-top:8px;font-size:11.5px;color:var(--text-tertiary);line-height:1.7;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px 18px;}
+  footer.note b{color:var(--text-secondary);}
+
+  @media (max-width:1100px){ .kpi-grid{grid-template-columns:repeat(3,1fr);} }
+  @media (max-width:720px){
+    .dash{padding:18px 14px 40px;}
+    .kpi-grid{grid-template-columns:repeat(2,1fr);}
+    .pacing-banner{flex-wrap:wrap;}
+    .pacing-chips{max-width:100%;}
+    table.detail{min-width:640px;}
+    .detail-card{overflow-x:auto;}
+  }
+</style>
+</head>
+<body>
+<div class="dash">
+
+  <div class="dash-header">
+    <div class="brand-block">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="white" stroke-width="2"/><path d="M12 7V12L15 14" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>
+      </div>
+      <div class="brand-text">
+        <h1>Client Pacing Dashboard</h1>
+        <p>Theo dõi Ngân sách, Data & ROAS theo tiến độ thời gian thực tế</p>
+      </div>
+    </div>
+    <div class="updated-text" id="updatedText"></div>
+  </div>
+
+  <div class="control-bar">
+    <div class="tabs" id="clientTabs"></div>
+    <div class="elapsed-group">
+      <label>Kỳ báo cáo đã qua</label>
+      <input type="number" id="elapsedInput" value="64.52" step="0.01" min="1" max="100">
+      <span class="suffix">%</span>
+    </div>
+  </div>
+
+  <div class="source-card">
+    <div class="source-head" id="sourceHead">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="source-title">Nguồn dữ liệu — Kết nối Google Sheets (CSV)</span>
+      <span class="source-status idle" id="sourceStatus">Đang dùng dữ liệu mẫu</span>
+    </div>
+    <div class="source-body" id="sourceBody">
+      <div class="source-row">
+        <input type="text" id="sourceUrlInput" placeholder="Dán link CSV đã Publish to web, vd: https://docs.google.com/spreadsheets/d/e/.../pub?output=csv">
+        <button class="btn" id="connectBtn">Kết nối & Làm mới</button>
+        <button class="btn secondary" id="copyLinkBtn">Sao chép link kèm dữ liệu</button>
+      </div>
+      <div class="source-hint">
+        Cách lấy link: mở Google Sheet → <b>File &gt; Chia sẻ &gt; Xuất bản lên web</b> → chọn đúng trang tính chứa bảng này → định dạng <b>CSV</b> → Xuất bản → dán link vào ô trên.
+        Sau khi kết nối thành công, dùng nút "Sao chép link kèm dữ liệu" để lưu 1 đường link mở lại tự tải luôn, không cần dán lại link mỗi lần.
+        Lưu ý: link xuất bản dạng này cho phép bất kỳ ai có link đều xem được dữ liệu — cân nhắc trước khi dùng với số liệu nhạy cảm.
+      </div>
+    </div>
+  </div>
+
+  <div class="pacing-banner">
+    <div class="pacing-ring">
+      <svg width="76" height="76" viewBox="0 0 76 76">
+        <circle cx="38" cy="38" r="32" fill="none" stroke="#EDF0F4" stroke-width="8"/>
+        <circle id="ringProgress" cx="38" cy="38" r="32" fill="none" stroke="#0E9F6E" stroke-width="8" stroke-linecap="round" stroke-dasharray="201" stroke-dashoffset="0"/>
+      </svg>
+      <div class="ring-label"><span class="ring-num" id="ringNum">-</span><span class="ring-sub">tiến độ</span></div>
+    </div>
+    <div class="pacing-text">
+      <h2 id="bannerTitle">—</h2>
+      <p id="bannerDesc">—</p>
+    </div>
+    <div class="pacing-chips" id="pacingChips"></div>
+  </div>
+
+  <div class="kpi-grid" id="kpiGrid"></div>
+
+  <div class="explorer-card">
+    <div class="explorer-head">
+      <div>
+        <p class="card-title">So sánh Mục tiêu · Kỳ vọng theo tiến độ · Thực tế</p>
+        <p class="card-sub">So sánh trực tiếp giữa 2 khách hàng theo từng chỉ số</p>
+      </div>
+      <select class="control" id="metricSelect">
+        <option value="revenue">Doanh thu</option>
+        <option value="expense">Chi phí</option>
+        <option value="data">Data (Lead)</option>
+        <option value="cpa">CPA</option>
+        <option value="roas">ROAS</option>
+      </select>
+    </div>
+    <div class="chart-wrap"><canvas id="explorerChart"></canvas></div>
+  </div>
+
+  <div class="detail-section" id="detailSection"></div>
+
+  <footer class="note">
+    <b>Ghi chú phương pháp tính:</b> "Kỳ vọng theo tiến độ" = Mục tiêu × % thời gian đã qua trong kỳ báo cáo. "Chỉ số tiến độ" (Pacing Index) = (Thực tế ÷ Mục tiêu) ÷ % thời gian đã qua — trên 100% nghĩa là đang vượt tiến độ kỳ vọng, dưới 100% là đang chậm hơn kỳ vọng. Riêng <b>CPA</b> là chỉ số dạng tỷ lệ (không cộng dồn theo thời gian) nên được đánh giá trực tiếp bằng Mục tiêu ÷ Thực tế, không quy đổi theo tiến độ. <b>ROAS thực tế</b> = Doanh thu nguồn (gắn theo dõi qua quảng cáo) ÷ Chi phí. Ở dòng <b>Tổng</b>, ROAS và CPA mục tiêu được tính theo bình quân gia quyền (theo Chi phí mục tiêu và Data mục tiêu tương ứng) thay vì cộng trực tiếp phần trăm của từng khách hàng, để đảm bảo đúng bản chất toán học khi gộp hai tài khoản có quy mô khác nhau.
+  </footer>
+</div>
+
+<script>
+/* ============================================================
+   DATA — trích xuất từ bảng theo dõi gốc (khu vực ALL)
+   ============================================================ */
+let CLIENTS = {
+  shark: {
+    key:'shark', name:'Shark Dental Clinic', color:'#3538CD',
+    target:{ revenue:4900000000, expense:495000000, data:218, cpa:650000, roas:4 },
+    actual:{ revenue:2902385000, sourceRevenue:400000000, expense:141715693, data:192, cpa:738103 }
+  },
+  seoul: {
+    key:'seoul', name:'Seoul Academy', color:'#0E9F6E',
+    target:{ revenue:3500000000, expense:186000000, data:175, cpa:600000, roas:2.3 },
+    actual:{ revenue:1100000000, sourceRevenue:319620000, expense:105202174, data:190, cpa:553696 }
+  }
+};
+const METRIC_LABEL = { revenue:'Doanh thu', expense:'Chi phí', data:'Data (Lead)', cpa:'CPA', roas:'ROAS' };
+const PALETTE = ['#3538CD','#0E9F6E','#F79009','#E62E2E','#0BA5EC','#7A5AF8','#DE8A00','#12B76A'];
+let CLIENT_ORDER = Object.keys(CLIENTS);
+
+const state = { tab:'all', elapsedPct:64.52, metric:'revenue' };
+
+/* ============================================================
+   FORMATTERS
+   ============================================================ */
+function fmtVND(v){
+  if (Math.abs(v)>=1e9) return (v/1e9).toFixed(2).replace('.',',') + ' tỷ ₫';
+  if (Math.abs(v)>=1e6) return (v/1e6).toFixed(1).replace('.',',') + ' tr ₫';
+  return Math.round(v).toLocaleString('vi-VN') + ' ₫';
+}
+function fmtInt(v){ return Math.round(v).toLocaleString('vi-VN'); }
+function fmtRoas(v){ return v.toFixed(2).replace('.',',') + 'x'; }
+function fmtPct(v){ return v.toFixed(2).replace('.',',') + '%'; }
+function fmtPct1(v){ return v.toFixed(1).replace('.',',') + '%'; }
+function valueFmt(metric, v){
+  if (metric==='data') return fmtInt(v);
+  if (metric==='roas') return fmtRoas(v);
+  return fmtVND(v);
+}
+
+/* ============================================================
+   SCOPE DATA (per client or aggregated Tổng)
+   ============================================================ */
+function getScope(key){
+  if (key==='total'){
+    const keys = Object.keys(CLIENTS);
+    let targetRevenueSum=0, actualRevenueSum=0, targetExpenseSum=0, actualExpenseSum=0,
+        targetDataSum=0, actualDataSum=0, actualSourceSum=0, cpaWeightedNum=0, roasWeightedNum=0;
+    keys.forEach(k=>{
+      const c = CLIENTS[k];
+      targetRevenueSum += c.target.revenue;
+      actualRevenueSum += c.actual.revenue;
+      targetExpenseSum += c.target.expense;
+      actualExpenseSum += c.actual.expense;
+      targetDataSum += c.target.data;
+      actualDataSum += c.actual.data;
+      actualSourceSum += c.actual.sourceRevenue;
+      cpaWeightedNum += c.target.cpa * c.target.data;
+      roasWeightedNum += c.target.roas * c.target.expense;
+    });
+    return {
+      key:'total', name:'Tổng cộng', color:'#667085',
+      target:{
+        revenue: targetRevenueSum, expense: targetExpenseSum, data: targetDataSum,
+        cpa: cpaWeightedNum / targetDataSum, roas: roasWeightedNum / targetExpenseSum
+      },
+      actual:{
+        revenue: actualRevenueSum, sourceRevenue: actualSourceSum,
+        expense: actualExpenseSum, data: actualDataSum, cpa: actualExpenseSum / actualDataSum
+      }
+    };
+  }
+  return CLIENTS[key];
+}
+
+/* ============================================================
+   METRIC COMPUTATION
+   ============================================================ */
+function computeMetric(scope, metric, elapsedFraction){
+  const t = scope.target, a = scope.actual;
+  if (metric==='roas'){
+    const actualRoas = a.sourceRevenue / a.expense;
+    const target = t.roas;
+    const achv = (actualRoas/target)*100;
+    const pacing = achv/(elapsedFraction*100)*100;
+    return { target, paced: target*elapsedFraction, actual: actualRoas, achv, pacing, hasPacing:true };
+  }
+  if (metric==='cpa'){
+    const achv = (t.cpa/a.cpa)*100; // inverted: higher = better (cheaper than target)
+    return { target: t.cpa, paced:null, actual: a.cpa, achv, pacing:null, hasPacing:false };
+  }
+  const target = t[metric], actual = a[metric];
+  const achv = (actual/target)*100;
+  const pacing = achv/(elapsedFraction*100)*100;
+  return { target, paced: target*elapsedFraction, actual, achv, pacing, hasPacing:true };
+}
+
+function paceStatus(m){
+  if (!m.hasPacing){
+    if (m.achv >= 100) return { cls:'ahead', label:'Trong ngân sách' };
+    if (m.achv >= 85) return { cls:'ontrack', label:'Sát ngân sách' };
+    return { cls:'behind', label:'Vượt ngân sách' };
+  }
+  if (m.pacing >= 100) return { cls:'ahead', label:'Vượt tiến độ' };
+  if (m.pacing >= 85) return { cls:'ontrack', label:'Đúng tiến độ' };
+  return { cls:'behind', label:'Chậm tiến độ' };
+}
+
+/* ============================================================
+   RENDER: TABS
+   ============================================================ */
+function getTabDefs(){
+  return [
+    { key:'all', label:'Tất cả', color:null },
+    ...CLIENT_ORDER.map(k=>({ key:k, label:CLIENTS[k].name, color:CLIENTS[k].color }))
+  ];
+}
+function renderTabs(){
+  const wrap = document.getElementById('clientTabs');
+  const TAB_DEFS = getTabDefs();
+  wrap.innerHTML = TAB_DEFS.map(t => `
+    <div class="tab ${state.tab===t.key?'active':''}" data-key="${t.key}">
+      ${t.color?`<span class="dot" style="background:${t.color}"></span>`:''}${t.label}
+    </div>`).join('');
+  wrap.querySelectorAll('.tab').forEach(el=>{
+    el.addEventListener('click', ()=>{ state.tab = el.dataset.key; renderAll(); });
+  });
+}
+
+/* ============================================================
+   RENDER: PACING BANNER
+   ============================================================ */
+function renderBanner(elapsedFraction){
+  const scopeKey = state.tab==='all' ? 'total' : state.tab;
+  const scope = getScope(scopeKey);
+  const revM = computeMetric(scope, 'revenue', elapsedFraction);
+  const pacing = revM.pacing;
+  const st = paceStatus(revM);
+  const colorMap = { ahead:'#0E9F6E', ontrack:'#DE8A00', behind:'#E62E2E' };
+  const circumference = 2*Math.PI*32;
+  const clamped = Math.max(0, Math.min(150, pacing));
+  const offset = circumference * (1 - Math.min(1, clamped/150));
+  document.getElementById('ringProgress').setAttribute('stroke', colorMap[st.cls]);
+  document.getElementById('ringProgress').setAttribute('stroke-dasharray', circumference.toFixed(1));
+  document.getElementById('ringProgress').setAttribute('stroke-dashoffset', offset.toFixed(1));
+  document.getElementById('ringNum').textContent = pacing.toFixed(0)+'%';
+  document.getElementById('ringNum').style.color = colorMap[st.cls];
+
+  const titleMap = { ahead:'🚀 Đang vượt tiến độ kỳ vọng', ontrack:'🟡 Đang bám sát tiến độ', behind:'🔴 Đang chậm hơn tiến độ kỳ vọng' };
+  document.getElementById('bannerTitle').textContent = `${scope.name} — ${titleMap[st.cls]}`;
+  document.getElementById('bannerDesc').innerHTML =
+    `Đã qua <b>${fmtPct(elapsedFraction*100)}</b> kỳ báo cáo. Doanh thu hiện đạt <b>${fmtPct1(revM.achv)}</b> mục tiêu → chỉ số tiến độ doanh thu <b>${revM.pacing.toFixed(1)}%</b> so với kỳ vọng.`;
+
+  const chips = ['expense','data','cpa','roas'].map(m=>{
+    const mm = computeMetric(scope, m, elapsedFraction);
+    const s2 = paceStatus(mm);
+    const val = mm.hasPacing ? mm.pacing.toFixed(0)+'%' : mm.achv.toFixed(0)+'%';
+    return `<span class="pace-chip pace-${s2.cls}">${METRIC_LABEL[m]}: ${val}</span>`;
+  }).join('');
+  document.getElementById('pacingChips').innerHTML = chips;
+}
+
+/* ============================================================
+   RENDER: KPI CARDS
+   ============================================================ */
+function renderKPIs(elapsedFraction){
+  const scopeKey = state.tab==='all' ? 'total' : state.tab;
+  const scope = getScope(scopeKey);
+  const metrics = ['revenue','expense','data','cpa','roas'];
+  const colorMap = { ahead:'#0E9F6E', ontrack:'#DE8A00', behind:'#E62E2E' };
+
+  document.getElementById('kpiGrid').innerHTML = metrics.map(m=>{
+    const mm = computeMetric(scope, m, elapsedFraction);
+    const st = paceStatus(mm);
+    const barPct = Math.min(100, mm.achv);
+    const markerPct = mm.hasPacing ? Math.min(100, elapsedFraction*100) : null;
+    const extra = m==='revenue' ? `<div class="kpi-extra">Doanh thu nguồn: ${fmtVND(scope.actual.sourceRevenue)}</div>` : '';
+    const badgeVal = mm.hasPacing ? mm.pacing.toFixed(0)+'%' : mm.achv.toFixed(0)+'%';
+    const badgeLabelPrefix = mm.hasPacing ? 'Tiến độ' : 'Đạt';
+    return `
+      <div class="kpi-card">
+        <div class="kpi-label"><span>${METRIC_LABEL[m]}</span></div>
+        <div class="kpi-value">${valueFmt(m, mm.actual)}</div>
+        <div class="kpi-target">Mục tiêu: ${valueFmt(m, mm.target)} · Đạt ${fmtPct1(mm.achv)}</div>
+        <div class="bar-outer">
+          <div class="bar-fill" style="width:${barPct}%;background:${colorMap[st.cls]}"></div>
+          ${markerPct!==null?`<div class="bar-marker" style="left:${markerPct}%"></div>`:''}
+        </div>
+        <div class="kpi-foot">
+          <span class="pace-badge pace-${st.cls}" style="background:${colorMap[st.cls]}1A;color:${colorMap[st.cls]}">${badgeLabelPrefix} ${badgeVal}</span>
+          <span class="kpi-extra">${st.label}</span>
+        </div>
+        ${extra}
+      </div>`;
+  }).join('');
+}
+
+/* ============================================================
+   RENDER: EXPLORER CHART
+   ============================================================ */
+let explorerChart;
+Chart.defaults.font.family = "'IBM Plex Sans', sans-serif";
+Chart.defaults.color = '#5D6779';
+
+function renderExplorer(elapsedFraction){
+  const metric = state.metric;
+  const labels = CLIENT_ORDER.map(k=>CLIENTS[k].name);
+  const targets = [], paced = [], actuals = [];
+  let anyPacing = false;
+  CLIENT_ORDER.forEach(k=>{
+    const mm = computeMetric(CLIENTS[k], metric, elapsedFraction);
+    targets.push(mm.target);
+    if (mm.hasPacing){ paced.push(mm.paced); anyPacing = true; }
+    actuals.push(mm.actual);
+  });
+
+  const datasets = [
+    { label:'Mục tiêu', data: targets, backgroundColor:'#D0D5DD', borderRadius:5, barThickness:26 },
+  ];
+  if (paced.length){
+    datasets.push({ label:'Kỳ vọng theo tiến độ', data: paced, backgroundColor:'#A6ABE8', borderRadius:5, barThickness:26 });
+  }
+  datasets.push({ label:'Thực tế', data: actuals, backgroundColor:'#3538CD', borderRadius:5, barThickness:26 });
+
+  const ctx = document.getElementById('explorerChart');
+  const data = { labels, datasets };
+  const opts = {
+    responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{ display:true, position:'top', align:'end', labels:{boxWidth:8,boxHeight:8,usePointStyle:true,font:{size:11.5}} },
+      tooltip:{ callbacks:{ label:(item)=> ` ${item.dataset.label}: ${valueFmt(metric, item.raw)}` } } },
+    scales:{
+      x:{ grid:{ display:false }, ticks:{ font:{size:11.5} } },
+      y:{ grid:{ color:'#EDF0F4' }, ticks:{ font:{size:10.5}, callback:(v)=>metric==='data'? fmtInt(v): (metric==='roas'? v.toFixed(1)+'x' : fmtVND(v)) } }
+    }
+  };
+  if (explorerChart){ explorerChart.data = data; explorerChart.options = opts; explorerChart.update(); }
+  else { explorerChart = new Chart(ctx, { type:'bar', data, options: opts }); }
+}
+
+/* ============================================================
+   RENDER: DETAIL TABLES
+   ============================================================ */
+function renderMetricTableRows(scope, elapsedFraction){
+  const metrics = ['revenue','expense','data','cpa','roas'];
+  return metrics.map(m=>{
+    const mm = computeMetric(scope, m, elapsedFraction);
+    const st = paceStatus(mm);
+    const colorMap = { ahead:'#0E9F6E', ontrack:'#DE8A00', behind:'#E62E2E' };
+    const badgeVal = mm.hasPacing ? mm.pacing.toFixed(1)+'%' : '—';
+    return `
+      <tr>
+        <td>${METRIC_LABEL[m]}</td>
+        <td class="mono">${valueFmt(m, mm.target)}</td>
+        <td class="mono">${mm.paced!==null ? valueFmt(m, mm.paced) : '—'}</td>
+        <td class="mono">${valueFmt(m, mm.actual)}</td>
+        <td class="mono">${fmtPct1(mm.achv)}</td>
+        <td class="mono" style="color:${colorMap[st.cls]};font-weight:600;">${badgeVal!=='—'?badgeVal:st.label}</td>
+      </tr>`;
+  }).join('');
+}
+function detailTableHTML(scope, elapsedFraction){
+  return `
+    <div class="detail-card">
+      <div class="detail-head">
+        <span class="dot" style="background:${scope.color}"></span>
+        <h3>${scope.name}</h3>
+      </div>
+      <table class="detail">
+        <thead><tr>
+          <th>Chỉ số</th><th>Mục tiêu</th><th>Kỳ vọng theo tiến độ</th><th>Thực tế</th><th>% Đạt</th><th>Chỉ số tiến độ</th>
+        </tr></thead>
+        <tbody>${renderMetricTableRows(scope, elapsedFraction)}</tbody>
+      </table>
+    </div>`;
+}
+function renderDetail(elapsedFraction){
+  const wrap = document.getElementById('detailSection');
+  if (state.tab==='all'){
+    wrap.innerHTML = [...CLIENT_ORDER,'total'].map(k=>detailTableHTML(getScope(k), elapsedFraction)).join('');
+  } else {
+    wrap.innerHTML = detailTableHTML(getScope(state.tab), elapsedFraction);
+  }
+}
+
+/* ============================================================
+   CSV IMPORT — đọc dữ liệu sống từ Google Sheets (Publish to web)
+   ============================================================ */
+function parseVNNumber(raw){
+  if (raw===undefined || raw===null) return NaN;
+  let s = String(raw).trim();
+  if (s==='' || /^#/.test(s)) return NaN;
+  s = s.replace(/[₫đ%\s]/g,'');
+  const dotCount = (s.match(/\./g)||[]).length;
+  const commaCount = (s.match(/,/g)||[]).length;
+  if (dotCount > 1){ s = s.replace(/\./g,''); s = s.replace(',', '.'); }
+  else if (dotCount===1 && commaCount===0){ /* giữ nguyên, coi như số nguyên/thập phân chuẩn */ }
+  else if (commaCount>=1){ s = s.replace(/\./g,''); s = s.replace(',', '.'); }
+  const v = parseFloat(s);
+  return v;
+}
+function parseCSVText(text){
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for (let i=0;i<text.length;i++){
+    const c = text[i];
+    if (inQuotes){
+      if (c === '"'){ if (text[i+1] === '"'){ field += '"'; i++; } else { inQuotes = false; } }
+      else field += c;
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ','){ row.push(field); field=''; }
+      else if (c === '\n'){ row.push(field); rows.push(row); row=[]; field=''; }
+      else if (c === '\r'){ /* skip */ }
+      else field += c;
+    }
+  }
+  if (field.length || row.length){ row.push(field); rows.push(row); }
+  return rows;
+}
+// Cột theo đúng cấu trúc bảng gốc: A=Area, B=RevenueTarget, C=RealRevenue, D=SourceRevenue,
+// E=%, F=ExpenseTarget, G=ExpenseReal, H=%, I=DataTarget, J=DataReal, K=%,
+// L=CpaTarget, M=CpaReal, N=%, O=RoasTarget, P=RoasReal, Q=%
+function extractRowValues(row){
+  return {
+    revenueTarget: parseVNNumber(row[1]), realRevenue: parseVNNumber(row[2]), sourceRevenue: parseVNNumber(row[3]),
+    expenseTarget: parseVNNumber(row[5]), expenseReal: parseVNNumber(row[6]),
+    dataTarget: parseVNNumber(row[8]), dataReal: parseVNNumber(row[9]),
+    cpaTarget: parseVNNumber(row[11]), cpaReal: parseVNNumber(row[12]),
+    roasTarget: parseVNNumber(row[14]), roasReal: parseVNNumber(row[15])
+  };
+}
+function parseSheetCSV(text){
+  const rows = parseCSVText(text);
+  const result = {};
+  let currentName = null;
+  for (let i=0;i<rows.length;i++){
+    const row = rows[i];
+    const nonEmpty = row.map(c=>(c||'').trim()).filter(Boolean);
+    const upper = nonEmpty.map(c=>c.toUpperCase());
+    // dòng chỉ có đúng 1 ô có chữ, không phải marker/label quen thuộc -> coi là tên khách hàng
+    if (nonEmpty.length === 1 && !['EXPECTED PROGRESS','REAL RUN','AREA','ALL'].includes(upper[0]) && !/^[0-9.,%\s₫đ-]+$/.test(nonEmpty[0])){
+      currentName = nonEmpty[0];
+      if (!result[currentName]) result[currentName] = { name: currentName };
+    }
+    if (currentName && upper.includes('EXPECTED PROGRESS')){
+      const dataRow = rows[i+2];
+      if (dataRow) result[currentName].expected = extractRowValues(dataRow);
+    }
+    if (currentName && upper.includes('REAL RUN')){
+      const dataRow = rows[i+2];
+      if (dataRow) result[currentName].real = extractRowValues(dataRow);
+    }
+  }
+  return result;
+}
+function buildClientsFromParsed(parsed){
+  const names = Object.keys(parsed).filter(n => parsed[n].real);
+  if (names.length === 0) return null;
+  const newClients = {};
+  const newOrder = [];
+  names.forEach((name, idx)=>{
+    const r = parsed[name].real;
+    const key = 'c'+idx+'_'+name.toLowerCase().replace(/[^a-z0-9]+/g,'');
+    newClients[key] = {
+      key, name, color: PALETTE[idx % PALETTE.length],
+      target: { revenue: r.revenueTarget, expense: r.expenseTarget, data: r.dataTarget, cpa: r.cpaTarget, roas: r.roasTarget },
+      actual: { revenue: r.realRevenue, sourceRevenue: r.sourceRevenue, expense: r.expenseReal, data: r.dataReal, cpa: r.cpaReal }
+    };
+    newOrder.push(key);
+  });
+  return { newClients, newOrder };
+}
+
+function setSourceStatus(text, cls){
+  const el = document.getElementById('sourceStatus');
+  el.textContent = text;
+  el.className = 'source-status ' + cls;
+}
+
+async function loadFromCSV(url){
+  if (!url){ setSourceStatus('Vui lòng dán link CSV', 'err'); return; }
+  setSourceStatus('Đang tải dữ liệu...', 'idle');
+  try{
+    const sep = url.includes('?') ? '&' : '?';
+    const bust = url + sep + '_ts=' + Date.now();
+    const res = await fetch(bust);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const text = await res.text();
+    const parsed = parseSheetCSV(text);
+    const built = buildClientsFromParsed(parsed);
+    if (!built) throw new Error('Không tìm thấy dữ liệu đúng cấu trúc trong file CSV');
+    CLIENTS = built.newClients;
+    CLIENT_ORDER = built.newOrder;
+    if (state.tab !== 'all' && !CLIENT_ORDER.includes(state.tab)) state.tab = 'all';
+    setSourceStatus('Đã kết nối · ' + CLIENT_ORDER.length + ' khách hàng · ' + new Date().toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'}), 'ok');
+    renderAll();
+  } catch(err){
+    console.error(err);
+    setSourceStatus('Lỗi tải dữ liệu: ' + err.message, 'err');
+  }
+}
+
+/* ============================================================
+   EVENTS
+   ============================================================ */
+document.getElementById('elapsedInput').addEventListener('input', e=>{
+  let v = parseFloat(e.target.value);
+  if (isNaN(v)) v = 64.52;
+  v = Math.max(1, Math.min(100, v));
+  state.elapsedPct = v;
+  renderAll();
+});
+document.getElementById('metricSelect').addEventListener('change', e=>{
+  state.metric = e.target.value;
+  renderExplorer(state.elapsedPct/100);
+});
+
+const sourceHead = document.getElementById('sourceHead');
+const sourceBody = document.getElementById('sourceBody');
+sourceHead.addEventListener('click', ()=>{
+  sourceHead.classList.toggle('open');
+  sourceBody.classList.toggle('open');
+});
+document.getElementById('connectBtn').addEventListener('click', ()=>{
+  const url = document.getElementById('sourceUrlInput').value.trim();
+  loadFromCSV(url);
+});
+document.getElementById('copyLinkBtn').addEventListener('click', async ()=>{
+  const url = document.getElementById('sourceUrlInput').value.trim();
+  if (!url){ setSourceStatus('Chưa có link để sao chép', 'err'); return; }
+  const base = location.origin + location.pathname;
+  const shareUrl = base + '?src=' + encodeURIComponent(url);
+  try{
+    await navigator.clipboard.writeText(shareUrl);
+    setSourceStatus('Đã sao chép link kèm dữ liệu vào clipboard', 'ok');
+  } catch(e){
+    prompt('Sao chép link dưới đây:', shareUrl);
+  }
+});
+
+/* ============================================================
+   MASTER RENDER
+   ============================================================ */
+function renderAll(){
+  renderTabs();
+  const elapsedFraction = state.elapsedPct/100;
+  renderBanner(elapsedFraction);
+  renderKPIs(elapsedFraction);
+  renderExplorer(elapsedFraction);
+  renderDetail(elapsedFraction);
+}
+
+document.getElementById('updatedText').textContent = 'Cập nhật lúc ' + new Date().toLocaleDateString('vi-VN') + ', ' + new Date().toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'});
+
+renderAll();
+
+const srcParam = new URLSearchParams(location.search).get('src');
+if (srcParam){
+  document.getElementById('sourceUrlInput').value = srcParam;
+  sourceHead.classList.add('open');
+  sourceBody.classList.add('open');
+  loadFromCSV(srcParam);
+}
+</script>
+</body>
+</html>
